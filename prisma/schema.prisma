@@ -1,0 +1,619 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPERADMIN
+  ADMIN
+  SECURITY
+  RESIDENT
+}
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+enum ComplexStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+}
+enum ApartmentStatus {
+  ACTIVE
+  INACTIVE
+}
+enum ResidentStatus {
+  ACTIVE
+  INACTIVE
+}
+enum VehicleType {
+  CAR
+  MOTORCYCLE
+  BICYCLE
+  OTHER
+}
+enum VehicleStatus {
+  ACTIVE
+  INACTIVE
+}
+enum ParkingSpaceType {
+  FIXED
+  COMMUNAL
+  DRAW
+  VISITOR
+  TEMPORARY
+  SPECIAL
+}
+enum ParkingSpaceStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+  ASSIGNED
+  MAINTENANCE
+}
+enum AssignmentType {
+  FIXED
+  DRAW
+  TEMPORARY
+  SPECIAL
+}
+enum AssignmentStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+enum DrawStatus {
+  DRAFT
+  SCHEDULED
+  RUNNING
+  COMPLETED
+  CANCELLED
+}
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+  EXPIRED
+}
+enum VisitorAuthorizationStatus {
+  AUTHORIZED
+  INSIDE
+  EXITED
+  EXPIRED
+  CANCELLED
+}
+enum AccessEventType {
+  VEHICLE_ENTRY
+  VEHICLE_EXIT
+  VISITOR_ENTRY
+  VISITOR_EXIT
+}
+enum FineStatus {
+  PENDING
+  PAID
+  OVERDUE
+  CANCELLED
+}
+enum ChargeStatus {
+  PENDING
+  PAID
+  OVERDUE
+  CANCELLED
+}
+enum PaymentStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+  REFUNDED
+}
+enum NotificationType {
+  PARKING
+  VISITOR
+  PAYMENT
+  FINE
+  DRAW
+  SYSTEM
+}
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  SUSPENDED
+  EXPIRED
+}
+enum IncidentStatus {
+  OPEN
+  IN_REVIEW
+  CLOSED
+}
+
+model User {
+  id                 String       @id @default(cuid())
+  email              String       @unique
+  passwordHash       String
+  firstName          String
+  lastName           String
+  phone              String?
+  role               Role
+  complexId          String?
+  status             UserStatus   @default(ACTIVE)
+  lastLoginAt        DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  complex            Complex?     @relation(fields: [complexId], references: [id], onDelete: Restrict)
+  resident           Resident?
+  notifications      Notification[]
+  auditLogs          AuditLog[]
+  refreshTokens      RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  assignmentsCreated ParkingAssignment[] @relation("AssignmentCreator")
+  drawsExecuted      ParkingDraw[] @relation("DrawExecutor")
+  finesCreated       Fine[]        @relation("FineCreator")
+  accessEvents       AccessEvent[] @relation("AccessRegistrar")
+  incidentsReported  Incident[]    @relation("IncidentReporter")
+
+  @@index([complexId])
+  @@index([role, status])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model Complex {
+  id                 String        @id @default(cuid())
+  name               String
+  address            String
+  city               String
+  phone              String?
+  email              String?
+  numberOfApartments Int           @default(0)
+  status             ComplexStatus @default(ACTIVE)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  users              User[]
+  apartments         Apartment[]
+  residents          Resident[]
+  vehicles           Vehicle[]
+  parkingSpaces      ParkingSpace[]
+  assignments        ParkingAssignment[]
+  draws              ParkingDraw[]
+  reservations       Reservation[]
+  visitors           Visitor[]
+  visitorAuthorizations VisitorAuthorization[]
+  accessEvents       AccessEvent[]
+  fines              Fine[]
+  charges            Charge[]
+  notifications      Notification[]
+  auditLogs          AuditLog[]
+  subscriptions      Subscription[]
+  settings           ComplexSetting?
+  incidents          Incident[]
+
+  @@index([status])
+}
+
+model ComplexSetting {
+  id                       String   @id @default(cuid())
+  complexId                String   @unique
+  reservationsEnabled      Boolean  @default(true)
+  maxReservationHours      Int      @default(8)
+  visitorAuthorizationHours Int     @default(24)
+  updatedAt                DateTime @updatedAt
+  complex                  Complex  @relation(fields: [complexId], references: [id], onDelete: Cascade)
+}
+
+model Apartment {
+  id        String          @id @default(cuid())
+  complexId String
+  tower     String?
+  number    String
+  floor     String?
+  status    ApartmentStatus @default(ACTIVE)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  complex   Complex         @relation(fields: [complexId], references: [id], onDelete: Cascade)
+  residents Resident[]
+  assignments ParkingAssignment[]
+  visitorAuthorizations VisitorAuthorization[]
+  fines Fine[]
+
+  @@unique([complexId, tower, number])
+  @@index([complexId])
+}
+
+model Resident {
+  id                   String         @id @default(cuid())
+  userId               String         @unique
+  complexId            String
+  apartmentId          String
+  identificationType   String
+  identificationNumber String
+  emergencyContact     String?
+  status               ResidentStatus @default(ACTIVE)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  user                 User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  complex              Complex        @relation(fields: [complexId], references: [id], onDelete: Cascade)
+  apartment            Apartment      @relation(fields: [apartmentId], references: [id], onDelete: Restrict)
+  vehicles             Vehicle[]
+  assignments          ParkingAssignment[]
+  drawParticipants     ParkingDrawParticipant[]
+  drawResults          ParkingDrawResult[]
+  reservations         Reservation[]
+  visitorAuthorizations VisitorAuthorization[]
+  fines                Fine[]
+  charges              Charge[]
+  payments             Payment[]
+
+  @@unique([complexId, identificationNumber])
+  @@index([complexId])
+  @@index([apartmentId])
+}
+
+model Vehicle {
+  id        String        @id @default(cuid())
+  complexId String
+  residentId String
+  plate     String
+  type      VehicleType
+  brand     String?
+  model     String?
+  color     String?
+  status    VehicleStatus @default(ACTIVE)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  complex   Complex       @relation(fields: [complexId], references: [id], onDelete: Cascade)
+  resident  Resident      @relation(fields: [residentId], references: [id], onDelete: Restrict)
+  assignments ParkingAssignment[]
+  accessEvents AccessEvent[]
+
+  @@unique([complexId, plate])
+  @@index([complexId, status])
+  @@index([residentId])
+}
+
+model ParkingSpace {
+  id        String             @id @default(cuid())
+  complexId String
+  number    String
+  type      ParkingSpaceType
+  status    ParkingSpaceStatus @default(AVAILABLE)
+  location  String?
+  notes     String?
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  complex   Complex            @relation(fields: [complexId], references: [id], onDelete: Cascade)
+  assignments ParkingAssignment[]
+  reservations Reservation[]
+  drawSpaces ParkingDrawSpace[]
+  drawResults ParkingDrawResult[]
+
+  @@unique([complexId, number])
+  @@index([complexId, type, status])
+}
+
+model ParkingAssignment {
+  id             String           @id @default(cuid())
+  complexId      String
+  parkingSpaceId String
+  apartmentId    String?
+  residentId     String?
+  vehicleId      String?
+  type           AssignmentType
+  startDate      DateTime
+  endDate        DateTime?
+  status         AssignmentStatus @default(ACTIVE)
+  createdById    String
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  complex        Complex          @relation(fields: [complexId], references: [id], onDelete: Cascade)
+  parkingSpace   ParkingSpace     @relation(fields: [parkingSpaceId], references: [id], onDelete: Restrict)
+  apartment      Apartment?       @relation(fields: [apartmentId], references: [id], onDelete: Restrict)
+  resident       Resident?        @relation(fields: [residentId], references: [id], onDelete: Restrict)
+  vehicle        Vehicle?         @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  createdBy      User             @relation("AssignmentCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([complexId, status])
+  @@index([parkingSpaceId, status])
+  @@index([residentId])
+}
+
+model ParkingDraw {
+  id        String     @id @default(cuid())
+  complexId String
+  name      String
+  scheduledAt DateTime?
+  validFrom DateTime
+  validUntil DateTime
+  status    DrawStatus @default(DRAFT)
+  executedAt DateTime?
+  executedById String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  complex   Complex    @relation(fields: [complexId], references: [id], onDelete: Cascade)
+  executedBy User?     @relation("DrawExecutor", fields: [executedById], references: [id], onDelete: Restrict)
+  spaces    ParkingDrawSpace[]
+  participants ParkingDrawParticipant[]
+  results   ParkingDrawResult[]
+
+  @@index([complexId, status])
+}
+
+model ParkingDrawSpace {
+  drawId         String
+  parkingSpaceId String
+  draw           ParkingDraw   @relation(fields: [drawId], references: [id], onDelete: Cascade)
+  parkingSpace   ParkingSpace @relation(fields: [parkingSpaceId], references: [id], onDelete: Restrict)
+
+  @@id([drawId, parkingSpaceId])
+  @@index([parkingSpaceId])
+}
+
+model ParkingDrawParticipant {
+  drawId     String
+  residentId String
+  eligible   Boolean  @default(true)
+  draw       ParkingDraw @relation(fields: [drawId], references: [id], onDelete: Cascade)
+  resident   Resident @relation(fields: [residentId], references: [id], onDelete: Restrict)
+
+  @@id([drawId, residentId])
+  @@index([residentId])
+}
+
+model ParkingDrawResult {
+  id             String       @id @default(cuid())
+  drawId         String
+  parkingSpaceId String
+  residentId     String
+  assignmentId   String?
+  createdAt      DateTime     @default(now())
+  draw           ParkingDraw  @relation(fields: [drawId], references: [id], onDelete: Cascade)
+  parkingSpace   ParkingSpace @relation(fields: [parkingSpaceId], references: [id], onDelete: Restrict)
+  resident       Resident     @relation(fields: [residentId], references: [id], onDelete: Restrict)
+
+  @@unique([drawId, parkingSpaceId])
+  @@index([residentId])
+}
+
+model Reservation {
+  id             String            @id @default(cuid())
+  complexId      String
+  parkingSpaceId String
+  residentId     String
+  startDateTime  DateTime
+  endDateTime    DateTime
+  status         ReservationStatus @default(PENDING)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  complex        Complex           @relation(fields: [complexId], references: [id], onDelete: Cascade)
+  parkingSpace   ParkingSpace      @relation(fields: [parkingSpaceId], references: [id], onDelete: Restrict)
+  resident       Resident          @relation(fields: [residentId], references: [id], onDelete: Restrict)
+
+  @@index([complexId, status])
+  @@index([parkingSpaceId, startDateTime, endDateTime])
+  @@index([residentId])
+}
+
+model Visitor {
+  id                   String   @id @default(cuid())
+  complexId            String
+  fullName             String
+  identificationNumber String?
+  phone                String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  complex              Complex  @relation(fields: [complexId], references: [id], onDelete: Cascade)
+  authorizations       VisitorAuthorization[]
+
+  @@index([complexId, identificationNumber])
+}
+
+model VisitorAuthorization {
+  id                String                     @id @default(cuid())
+  complexId         String
+  visitorId         String
+  residentId        String
+  apartmentId       String
+  plate             String?
+  validFrom         DateTime
+  validUntil        DateTime
+  status            VisitorAuthorizationStatus @default(AUTHORIZED)
+  authorizationCode String                     @unique
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+  complex           Complex                    @relation(fields: [complexId], references: [id], onDelete: Cascade)
+  visitor           Visitor                    @relation(fields: [visitorId], references: [id], onDelete: Restrict)
+  resident          Resident                   @relation(fields: [residentId], references: [id], onDelete: Restrict)
+  apartment         Apartment                  @relation(fields: [apartmentId], references: [id], onDelete: Restrict)
+  accessEvents      AccessEvent[]
+
+  @@index([complexId, status])
+  @@index([residentId])
+}
+
+model AccessEvent {
+  id                       String          @id @default(cuid())
+  complexId                String
+  vehicleId                String?
+  visitorAuthorizationId   String?
+  type                     AccessEventType
+  registeredById           String
+  timestamp                DateTime        @default(now())
+  notes                    String?
+  complex                  Complex         @relation(fields: [complexId], references: [id], onDelete: Cascade)
+  vehicle                  Vehicle?        @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  visitorAuthorization     VisitorAuthorization? @relation(fields: [visitorAuthorizationId], references: [id], onDelete: Restrict)
+  registeredBy             User            @relation("AccessRegistrar", fields: [registeredById], references: [id], onDelete: Restrict)
+
+  @@index([complexId, timestamp])
+  @@index([vehicleId])
+  @@index([visitorAuthorizationId])
+}
+
+model Fine {
+  id          String     @id @default(cuid())
+  complexId   String
+  residentId  String
+  apartmentId String
+  reason      String
+  amount      Decimal    @db.Decimal(12, 2)
+  issuedAt    DateTime   @default(now())
+  dueDate     DateTime
+  status      FineStatus @default(PENDING)
+  createdById String
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  complex     Complex    @relation(fields: [complexId], references: [id], onDelete: Cascade)
+  resident    Resident   @relation(fields: [residentId], references: [id], onDelete: Restrict)
+  apartment   Apartment  @relation(fields: [apartmentId], references: [id], onDelete: Restrict)
+  createdBy   User       @relation("FineCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([complexId, status])
+  @@index([residentId])
+}
+
+model Charge {
+  id         String       @id @default(cuid())
+  complexId  String
+  residentId String
+  concept    String
+  amount     Decimal      @db.Decimal(12, 2)
+  dueDate    DateTime
+  status     ChargeStatus @default(PENDING)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  complex    Complex      @relation(fields: [complexId], references: [id], onDelete: Cascade)
+  resident   Resident     @relation(fields: [residentId], references: [id], onDelete: Restrict)
+  payments   Payment[]
+
+  @@index([complexId, status])
+  @@index([residentId])
+}
+
+model Payment {
+  id          String        @id @default(cuid())
+  chargeId    String
+  residentId  String
+  amount      Decimal       @db.Decimal(12, 2)
+  paymentDate DateTime      @default(now())
+  method      String
+  status      PaymentStatus @default(PENDING)
+  reference   String?       @unique
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  charge      Charge        @relation(fields: [chargeId], references: [id], onDelete: Restrict)
+  resident    Resident      @relation(fields: [residentId], references: [id], onDelete: Restrict)
+
+  @@index([chargeId])
+  @@index([residentId])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  complexId String?
+  title     String
+  message   String
+  type      NotificationType
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  complex   Complex?         @relation(fields: [complexId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+  @@index([complexId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  complexId String?
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  oldValue  Json?
+  newValue  Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  complex   Complex? @relation(fields: [complexId], references: [id], onDelete: SetNull)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([complexId, createdAt])
+  @@index([entity, entityId])
+}
+
+model Plan {
+  id                String   @id @default(cuid())
+  name              String   @unique
+  monthlyPrice      Decimal  @db.Decimal(12, 2)
+  maxApartments     Int
+  maxParkingSpaces  Int
+  maxSecurityUsers  Int
+  features          Json
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  subscriptions     Subscription[]
+}
+
+model Subscription {
+  id                      String             @id @default(cuid())
+  complexId               String
+  planId                  String
+  status                  SubscriptionStatus @default(ACTIVE)
+  startDate               DateTime
+  endDate                 DateTime?
+  minimumCommitmentMonths Int                @default(6)
+  nextBillingDate         DateTime
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+  complex                 Complex            @relation(fields: [complexId], references: [id], onDelete: Cascade)
+  plan                    Plan               @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([complexId, status])
+  @@index([planId])
+}
+
+model Incident {
+  id           String         @id @default(cuid())
+  complexId    String
+  reportedById String
+  title        String
+  description  String
+  status       IncidentStatus @default(OPEN)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  complex      Complex        @relation(fields: [complexId], references: [id], onDelete: Cascade)
+  reportedBy   User           @relation("IncidentReporter", fields: [reportedById], references: [id], onDelete: Restrict)
+
+  @@index([complexId, status])
+}
