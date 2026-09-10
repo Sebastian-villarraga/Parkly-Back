@@ -20,6 +20,7 @@ import { ReportsModule } from './reports/reports.module';
 import { ResidentsModule } from './residents/residents.module';
 import { ReservationsModule } from './reservations/reservations.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { SettingsModule } from './settings/settings.module';
 import { UsersModule } from './users/users.module';
 import { VehiclesModule } from './vehicles/vehicles.module';
 import { VisitorsModule } from './visitors/visitors.module';
@@ -49,6 +50,7 @@ import { VisitorsModule } from './visitors/visitors.module';
     ReportsModule,
     PlansModule,
     SubscriptionsModule,
+    SettingsModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

@@ -226,6 +226,12 @@ model ComplexSetting {
   reservationsEnabled      Boolean  @default(true)
   maxReservationHours      Int      @default(8)
   visitorAuthorizationHours Int     @default(24)
+  dashboardTitle           String   @default("Centro de operaciones")
+  dashboardDescription     String   @default("Una vista clara del estado de tu conjunto residencial.")
+  dashboardImageUrl        String?
+  dashboardShowMetrics     Boolean  @default(true)
+  dashboardShowActivity    Boolean  @default(true)
+  dashboardShowQuickLinks  Boolean  @default(true)
   updatedAt                DateTime @updatedAt
   complex                  Complex  @relation(fields: [complexId], references: [id], onDelete: Cascade)
 }
