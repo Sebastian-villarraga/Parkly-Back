@@ -41,6 +41,15 @@ export class VehiclesService {
       throw new ForbiddenException('Solo puedes acceder a tus vehículos');
     return row;
   }
+  async lookup(plate: string, user: AuthenticatedUser) {
+    const complexId = this.tenant.requireComplexId(user);
+    const row = await this.prisma.vehicle.findFirst({
+      where: { complexId, plate: plate.toUpperCase() },
+      select: { id: true, plate: true, type: true, status: true },
+    });
+    if (!row) throw new NotFoundException('Vehículo no encontrado');
+    return row;
+  }
   async create(dto: CreateVehicleDto, user: AuthenticatedUser) {
     const complexId = this.tenant.requireComplexId(user);
     const resident = await this.resolveResident(dto.residentId, user, complexId);
