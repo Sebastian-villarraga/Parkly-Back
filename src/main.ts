@@ -9,6 +9,9 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { cors: false });
   const config = app.get(ConfigService);
+  if (config.get<string>('TRUST_PROXY') === '1') {
+    app.getHttpAdapter().getInstance().set('trust proxy', 1);
+  }
   const allowedOrigins = config
     .get<string>('CORS_ORIGIN', 'http://localhost:3000')
     .split(',')
@@ -39,7 +42,10 @@ async function bootstrap(): Promise<void> {
     .build();
   SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, swaggerConfig));
 
-  await app.listen(config.get<number>('PORT', 4000));
+  await app.listen(
+    config.get<number>('PORT', 4000),
+    config.get<string>('HOST', '0.0.0.0'),
+  );
 }
 
 void bootstrap();

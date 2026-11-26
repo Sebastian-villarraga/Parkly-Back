@@ -49,6 +49,10 @@ El superadministrador solo tiene las rutas explícitas de plataforma (`/complexe
 
 La API queda en `http://localhost:4000/api/v1` y Swagger en `http://localhost:4000/docs`.
 
+## Despliegue conjunto en EC2
+
+Este repositorio incluye una plantilla de Nginx para servir el build del frontend y enrutar `/api/` y `/docs` al backend, además de una unidad systemd para mantener la API en ejecución. Consulte [`deploy/README.md`](deploy/README.md) para los pasos de instalación y configuración en Ubuntu.
+
 ## Variables de entorno
 
 Revise [`.env.example`](.env.example). En producción cambie ambos secretos JWT por valores largos y aleatorios, use una contraseña de base de datos segura y defina un `CORS_ORIGIN` específico. Nunca suba `.env`.
