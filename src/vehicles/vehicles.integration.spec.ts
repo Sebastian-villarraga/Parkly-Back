@@ -1,4 +1,4 @@
-﻿import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import * as request from 'supertest';
 import { AppModule } from '../app.module';
@@ -61,8 +61,11 @@ describe('Security vehicle lookup (real JWT and tenant guards)', () => {
   });
 
   afterAll(async () => {
-    if (inactiveId) await prisma.vehicle.delete({ where: { id: inactiveId } });
-    await app?.close();
+    try {
+      if (inactiveId) await prisma.vehicle.delete({ where: { id: inactiveId } });
+    } finally {
+      await app?.close();
+    }
   });
 
   const lookup = (plate: string, role = 'seguridad1') =>
@@ -123,5 +126,104 @@ describe('Security vehicle lookup (real JWT and tenant guards)', () => {
       .expect(401);
     for (const role of ['residente11', 'superadmin'])
       await lookup('ABC123', role).expect(403);
+  });
+  it('looks up a vehicle, records entry and exit, and lists persisted events', async () => {
+    const found = await lookup('abc123').expect(200);
+    const ids: string[] = [];
+    try {
+      for (const type of ['VEHICLE_ENTRY', 'VEHICLE_EXIT']) {
+        const created = await request(app.getHttpServer())
+          .post('/api/v1/access-control/events')
+          .set('Authorization', `Bearer ${tokens.seguridad1}`)
+          .send({ type, vehicleId: found.body.id, notes: 'Integration security flow' })
+          .expect(201);
+        ids.push(created.body.id);
+        expect(created.body).toEqual({
+          id: expect.any(String),
+          complexId: expect.any(String),
+          vehicleId: vehicle.id,
+          visitorAuthorizationId: null,
+          type,
+          registeredById: expect.any(String),
+          timestamp: expect.any(String),
+          notes: 'Integration security flow',
+        });
+        expect(Number.isNaN(Date.parse(created.body.timestamp))).toBe(false);
+        const persisted = await prisma.accessEvent.findUniqueOrThrow({
+          where: { id: created.body.id },
+        });
+        expect(persisted.type).toBe(type);
+      }
+      const list = await request(app.getHttpServer())
+        .get('/api/v1/access-control/events')
+        .set('Authorization', `Bearer ${tokens.seguridad1}`)
+        .expect(200);
+      for (const id of ids)
+        expect(list.body).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              id,
+              vehicle: expect.objectContaining({ id: vehicle.id }),
+              registeredBy: expect.objectContaining({ firstName: expect.any(String) }),
+            }),
+          ]),
+        );
+      const otherLogin = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ email: 'seguridad2@parkly.test', password: 'Parkly123*' })
+        .expect(201);
+      const otherList = await request(app.getHttpServer())
+        .get('/api/v1/access-control/events')
+        .set('Authorization', `Bearer ${otherLogin.body.accessToken}`)
+        .expect(200);
+      expect(otherList.body.some((event: { id: string }) => ids.includes(event.id))).toBe(
+        false,
+      );
+    } finally {
+      await prisma.auditLog.deleteMany({
+        where: { entity: 'AccessEvent', entityId: { in: ids } },
+      });
+      await prisma.accessEvent.deleteMany({ where: { id: { in: ids } } });
+    }
+  });
+
+  it('rejects inactive and foreign vehicles without creating an event', async () => {
+    const foreign = await prisma.vehicle.findFirstOrThrow({
+      where: { plate: foreignPlate },
+    });
+    for (const vehicleId of [inactiveId, foreign.id]) {
+      const before = await prisma.accessEvent.count({ where: { vehicleId } });
+      for (const type of ['VEHICLE_ENTRY', 'VEHICLE_EXIT']) {
+        const response = await request(app.getHttpServer())
+          .post('/api/v1/access-control/events')
+          .set('Authorization', `Bearer ${tokens.seguridad1}`)
+          .send({ type, vehicleId })
+          .expect(404);
+        expect(response.body.message).toBe('Vehículo no encontrado');
+      }
+      expect(await prisma.accessEvent.count({ where: { vehicleId } })).toBe(before);
+    }
+  });
+
+  it('validates event resources and enforces event guards', async () => {
+    await request(app.getHttpServer())
+      .post('/api/v1/access-control/events')
+      .set('Authorization', `Bearer ${tokens.seguridad1}`)
+      .send({ type: 'VEHICLE_ENTRY' })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post('/api/v1/access-control/events')
+      .set('Authorization', `Bearer ${tokens.seguridad1}`)
+      .send({ type: 'INVALID', vehicleId: vehicle.id })
+      .expect(400);
+    for (const method of ['get', 'post'] as const) {
+      await request(app.getHttpServer())
+        [method]('/api/v1/access-control/events')
+        .expect(401);
+      await request(app.getHttpServer())
+        [method]('/api/v1/access-control/events')
+        .set('Authorization', `Bearer ${tokens.residente11}`)
+        .expect(403);
+    }
   });
 });

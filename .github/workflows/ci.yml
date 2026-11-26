@@ -1,0 +1,39 @@
+﻿name: Backend CI
+on:
+  push:
+  pull_request:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: parkly_test
+          POSTGRES_USER: parkly_test
+          POSTGRES_PASSWORD: parkly_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U parkly_test -d parkly_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://parkly_test:parkly_test@localhost:5432/parkly_test?schema=public
+      JWT_SECRET: ci-only-access-secret-with-at-least-32-characters
+      JWT_REFRESH_SECRET: ci-only-refresh-secret-with-at-least-32-characters
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prisma:generate
+      - run: pnpm prisma:deploy
+      - run: pnpm prisma:seed
+      - run: pnpm test
+      - run: pnpm build
