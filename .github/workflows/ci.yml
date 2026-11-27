@@ -1,7 +1,11 @@
-﻿name: Backend CI
+name: Backend CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -35,5 +39,49 @@ jobs:
       - run: pnpm prisma:generate
       - run: pnpm prisma:deploy
       - run: pnpm prisma:seed
-      - run: pnpm test
+      - run: pnpm test:cov
       - run: pnpm build
+      - name: Save test coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 7
+      - name: SonarCloud setup notice
+        if: ${{ vars.SONAR_PROJECT_KEY == '' || vars.SONAR_ORGANIZATION == '' }}
+        run: echo 'SonarCloud omitted. Configure SONAR_PROJECT_KEY, SONAR_ORGANIZATION and SONAR_TOKEN to enable analysis.' >> "$GITHUB_STEP_SUMMARY"
+
+  sonarcloud:
+    name: SonarCloud and Quality Gate
+    needs: verify
+    if: >-
+      vars.SONAR_PROJECT_KEY != '' &&
+      vars.SONAR_ORGANIZATION != '' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage
+          path: coverage
+      - name: Check SonarCloud configuration and coverage
+        shell: bash
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo '::error::Create the SONAR_TOKEN repository secret before enabling SonarCloud.'
+            exit 1
+          fi
+          test -s coverage/lcov.info
+      - name: Analyze and wait for Quality Gate
+        uses: SonarSource/sonarqube-scan-action@v8.0.0
+        with:
+          args: >-
+            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
+            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
