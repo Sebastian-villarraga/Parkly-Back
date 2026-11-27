@@ -228,14 +228,15 @@ No se necesitan variables `SONAR_ORGANIZATION` ni `SONAR_PROJECT_KEY` en GitHub.
 2. En GitHub, Parkly-Back, **Settings > Secrets and variables > Actions > Secrets**,
    cree `SONAR_TOKEN` con un token autorizado para analizar ese proyecto. El autor
    confirmó que este secreto ya existe. No lo escriba en código, `.env` ni chat.
-3. Publique el commit y abra/actualice un PR, o ejecute **Backend CI** manualmente
-   cuando el workflow esté disponible en GitHub. El análisis de ramas y PRs
-   depende de las capacidades y permisos del proyecto en SonarCloud.
+3. Integre el PR en la rama principal del repositorio. El plan actual de la
+   organización solo permite resultados de esa rama: SonarCloud y el Quality Gate
+   se ejecutan en pushes y ejecuciones manuales de la rama principal. Las ramas
+   de trabajo y los PRs conservan pruebas con cobertura y build, sin análisis SonarCloud.
 4. Confirme **SonarCloud and Quality Gate** en Actions y el análisis en el panel:
    https://sonarcloud.io/dashboard?id=Sebastian-villarraga_Parkly-Back
 
-Sin token, el job falla con un mensaje explícito. Los PRs desde forks ejecutan
-las pruebas, pero omiten el análisis con secreto; no se utiliza `pull_request_target`.
+Sin token, el job de la rama principal falla con un mensaje explícito. Los PRs,
+incluidos los de forks, omiten el análisis con secreto; no se utiliza `pull_request_target`.
 Un job omitido no equivale a un análisis aprobado.
 
 Para comprobar cobertura localmente, prepare la base demo descrita arriba y ejecute:
