@@ -37,10 +37,14 @@ describe('AuthService refresh token uniqueness', () => {
           }),
       },
     };
-    const config = new ConfigService({
+    const secrets: Record<string, string> = {
       JWT_SECRET: 'unit-test-access-secret',
       JWT_REFRESH_SECRET: 'unit-test-refresh-secret',
-    });
+    };
+    const config = {
+      getOrThrow: (key: string) => secrets[key],
+      get: (_key: string, fallback: string) => fallback,
+    } as unknown as ConfigService;
     const jwt = new JwtService();
     const service = new AuthService(prisma as unknown as PrismaService, jwt, config);
     const [first, second] = await Promise.all([
