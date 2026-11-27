@@ -3,7 +3,9 @@ module.exports = {
   rootDir: 'src',
   testRegex: '.*\\.spec\\.ts$',
   transform: { '^.+\\.(t|j)s$': 'ts-jest' },
-  collectCoverageFrom: ['**/*.(t|j)s'],
+  collectCoverageFrom: ['**/*.ts', '!**/*.spec.ts', '!**/*.d.ts'],
   coverageDirectory: '../coverage',
-  testEnvironment: 'node'
+  coverageProvider: 'v8',
+  coverageReporters: ['text-summary', 'lcov'],
+  testEnvironment: 'node',
 };

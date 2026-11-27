@@ -37,7 +37,7 @@ El superadministrador solo tiene las rutas explícitas de plataforma (`/complexe
    ```bash
    pnpm install
    pnpm prisma:generate
-   pnpm prisma:migrate -- --name init
+   pnpm prisma:deploy
    ```
 
 4. Cargue datos de demostración y arranque la API:
@@ -103,3 +103,153 @@ La prueba de tenant confirma que un usuario de un conjunto no puede usar recurso
 ## Estructura
 
 `src/common` contiene guards, decoradores, filtro uniforme de errores y aislamiento de tenant. `src/prisma` encapsula el cliente. Cada carpeta de dominio contiene controller, service y DTOs. El esquema completo y el seed viven en `prisma/`.
+
+## Demo reproducible y recorrido de seguridad
+
+Requisitos: Node.js 22, Corepack, pnpm 9.15.4 y Docker Compose. Use una base
+local de demo; las pruebas de integración escriben datos y requieren el seed.
+No ejecute seed ni estas suites sobre una base de producción.
+
+```powershell
+Copy-Item .env.example .env
+corepack enable
+corepack pnpm install --frozen-lockfile
+docker compose up -d
+corepack pnpm prisma:generate
+corepack pnpm prisma:deploy
+corepack pnpm prisma:seed
+corepack pnpm test
+corepack pnpm build
+corepack pnpm start:prod
+```
+
+Conserve su `.env` si ya existe. `prisma:deploy` aplica las migraciones versionadas;
+no es necesario crear una migración nueva para preparar la demo.
+Swagger: http://localhost:4000/docs. Para desarrollo: `corepack pnpm start:dev`.
+
+El seed crea `ABC123` en el conjunto 1 y `ABC223` en el conjunto 2.
+La contraseña de demo es `Parkly123*`. Este ejemplo PowerShell inicia sesión
+como seguridad, consulta la placa y registra entrada y salida:
+
+```powershell
+$base = 'http://localhost:4000/api/v1'
+$loginBody = @{ email = 'seguridad1@parkly.test'; password = 'Parkly123*' } | ConvertTo-Json
+$login = Invoke-RestMethod "$base/auth/login" -Method Post -ContentType 'application/json' -Body $loginBody
+$headers = @{ Authorization = "Bearer $($login.accessToken)" }
+Invoke-RestMethod "$base/auth/me" -Headers $headers
+$vehicle = Invoke-RestMethod "$base/vehicles/lookup?plate=abc123" -Headers $headers
+foreach ($type in @('VEHICLE_ENTRY', 'VEHICLE_EXIT')) {
+  $body = @{ type = $type; vehicleId = $vehicle.id; notes = 'Demo seguridad' } | ConvertTo-Json
+  Invoke-RestMethod "$base/access-control/events" -Method Post -Headers $headers -ContentType 'application/json' -Body $body
+}
+Invoke-RestMethod "$base/access-control/events" -Headers $headers
+```
+
+Contrato de consulta: `GET /api/v1/vehicles/lookup?plate=ABC123`, ADMIN o SECURITY,
+200 con exactamente `{ "id": "...", "plate": "ABC123", "type": "CAR", "status": "ACTIVE" }`.
+`type`: CAR, MOTORCYCLE, BICYCLE, OTHER. `status`: ACTIVE, INACTIVE; una coincidencia
+inactiva también devuelve 200. Comparte la validación de creación: 3 a 8 letras,
+números o guiones, sin espacios; normaliza a mayúsculas. Placa omitida, vacía o
+inválida: 400. Placa ausente o de otro conjunto: 404, `Vehículo no encontrado`.
+Sin JWT o JWT inválido: 401. RESIDENT y SUPERADMIN: 403. El conjunto siempre
+proviene de la sesión validada y TenantService; no se acepta `complexId` de query.
+
+`POST /api/v1/access-control/events` conserva HTTP 201 y el cuerpo
+`{ "type": "VEHICLE_ENTRY", "vehicleId": "...", "notes": "opcional" }`
+(o VEHICLE_EXIT). Devuelve el evento persistido con `id`, `complexId`, `vehicleId`,
+`visitorAuthorizationId`, `type`, `registeredById`, `timestamp` y `notes`.
+Solo admite vehículos ACTIVE del conjunto: inactivo, ausente o ajeno devuelve
+404 con el mismo mensaje. Tipo inválido o recurso requerido omitido: 400.
+ADMIN/SECURITY pueden registrar y listar; 401/403 siguen las mismas reglas JWT/rol.
+El flujo VISITOR_ENTRY/VISITOR_EXIT y el shape de GET permanecen vigentes:
+GET devuelve un array con relaciones `vehicle`, `visitorAuthorization.visitor`
+y `registeredBy` (nombre y apellido), ordenado por timestamp descendente.
+Una autorización inexistente da 404; una entrada fuera de vigencia o salida sin
+estado INSIDE da 400. No se añade una regla de alternancia entrada/salida de vehículos.
+
+Los errores conservan el filtro global: `statusCode`, `message` (texto o array de
+validaciones), `error`, `path`, `timestamp`. Para comprobar aislamiento consulte
+`ABC223` con seguridad1 (404); sin Authorization obtendrá 401 y con
+`residente11@parkly.test` obtendrá 403 en lookup y eventos.
+
+### Pruebas y diagnóstico
+
+`corepack pnpm test` ejecuta también las suites existentes de autenticación y tenant.
+`corepack pnpm test -- vehicles.integration` verifica la consulta con JWT/guards
+reales y el recorrido de acceso. Use una base demo recién migrada y con seed;
+las nuevas fixtures y eventos de esa suite se eliminan al finalizar.
+GitHub Actions ejecuta instalación congelada, generación Prisma, migraciones,
+seed, pruebas y build en push y pull_request con PostgreSQL aislado.
+
+- Error de conexión: `docker compose ps` y `docker compose logs postgres`;
+  compruebe DATABASE_URL y disponibilidad de 5432. En Windows, si Prisma falla con localhost aunque Docker esté saludable, use 127.0.0.1 y connect_timeout=30 en DATABASE_URL (valores de .env.example).
+- Cliente Prisma ausente: `corepack pnpm prisma:generate`.
+- Tablas ausentes: `corepack pnpm prisma:deploy`, después `corepack pnpm prisma:seed`.
+- 401: vuelva a hacer login; 403: revise rol y conjunto; 404 en lookup puede ser
+  una placa de otro conjunto y no debe revelar su existencia.
+- Puerto 4000 ocupado: detenga solo el proceso de esta API o cambie PORT en `.env`.
+- `start:prod` usa `dist/src/main.js`, salida real de este tsconfig (incluye prisma/seed.ts).
+- `test:e2e` es un script previo que apunta a `test/jest-e2e.json`, archivo inexistente;
+  use `pnpm test` para las suites de integración disponibles.
+
+### Revisión y recuperación
+
+Base del diagnóstico: `95a1f391ebe82b72826254ff64a5a6c03d9b8378`.
+La rama `feature/security-vehicle-lookup` conserva dos cortes: consulta y pruebas;
+luego recorrido de eventos, CI y documentación. Use `git log --oneline` y
+`git show <sha>` para revisarlos. Para recuperar un cambio compartido use
+`git revert <sha>` (primero el segundo corte si revierte ambos), resuelva conflictos
+y repita pruebas/build. No se modificó el esquema ni se requieren rollback de datos
+para estos commits. Si se solicita revisión de otro integrante del equipo, debe registrarse
+con su identidad y observaciones en el PR; una revisión automatizada no sustituye
+esa aprobación humana.
+
+En esta entrega el autor trabaja solo y pidió omitir la revisión de otro usuario de GitHub. No se afirma una aprobación humana externa.
+
+## SonarCloud (SonarQube Cloud)
+
+El workflow `.github/workflows/ci.yml` genera cobertura con `pnpm test:cov`,
+conserva `coverage/lcov.info` como artefacto y lo entrega al job `sonarcloud`.
+El escáner analiza `src/` y `prisma/`; reconoce `src/**/*.spec.ts` como pruebas.
+No se excluyen servicios ni controladores de la cobertura para mejorar artificialmente
+el porcentaje. El Quality Gate del proyecto se consulta hasta 300 segundos y,
+si falla, falla el job de análisis. No se establece ni se da por aprobado un umbral
+local de cobertura: las condiciones del gate se administran en SonarCloud.
+
+### Activación en la cuenta
+
+El proyecto importado usa Organization key `sebastian-villarraga` y Project key
+`Sebastian-villarraga_Parkly-Back`, versionados en `sonar-project.properties`.
+No se necesitan variables `SONAR_ORGANIZATION` ni `SONAR_PROJECT_KEY` en GitHub.
+
+1. En SonarCloud, use análisis mediante GitHub Actions. Si el proyecto ya usa
+   análisis automático, desactívelo en **Administration > Analysis Method** para
+   evitar análisis simultáneos.
+2. En GitHub, Parkly-Back, **Settings > Secrets and variables > Actions > Secrets**,
+   cree `SONAR_TOKEN` con un token autorizado para analizar ese proyecto. El autor
+   confirmó que este secreto ya existe. No lo escriba en código, `.env` ni chat.
+3. Integre el PR en la rama principal del repositorio. El plan actual de la
+   organización solo permite resultados de esa rama: SonarCloud y el Quality Gate
+   se ejecutan en pushes y ejecuciones manuales de la rama principal. Las ramas
+   de trabajo y los PRs conservan pruebas con cobertura y build, sin análisis SonarCloud.
+4. Confirme **SonarCloud and Quality Gate** en Actions y el análisis en el panel:
+   https://sonarcloud.io/dashboard?id=Sebastian-villarraga_Parkly-Back
+
+Sin token, el job de la rama principal falla con un mensaje explícito. Los PRs,
+incluidos los de forks, omiten el análisis con secreto; no se utiliza `pull_request_target`.
+Un job omitido no equivale a un análisis aprobado.
+
+Para comprobar cobertura localmente, prepare la base demo descrita arriba y ejecute:
+
+```powershell
+corepack pnpm test:cov
+```
+
+El archivo de configuración es `sonar-project.properties`; contiene las claves públicas confirmadas del proyecto.
+El directorio temporal `.scannerwork/` y los reportes `coverage/` se ignoran en Git.
+La configuración local no crea por sí sola el proyecto remoto ni el secreto,
+y no demuestra que haya ocurrido un análisis en SonarCloud.
+
+Referencias oficiales:
+[GitHub Actions](https://docs.sonarsource.com/sonarqube-cloud/analyzing-source-code/ci-based-analysis/github-actions-for-sonarcloud)
+y [cobertura JS/TS con LCOV](https://docs.sonarsource.com/sonarqube-cloud/analyzing-source-code/test-coverage/javascript-typescript-test-coverage).
