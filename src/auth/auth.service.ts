@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { ComplexStatus, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { createHash, randomBytes } from 'crypto';
+import { createHash, randomBytes, randomUUID } from 'crypto';
 import { AuthenticatedUser } from '../common/interfaces/authenticated-user.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
@@ -180,6 +180,7 @@ export class AuthService {
     });
     const refreshToken = await this.jwt.signAsync(payload, {
       secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
+      jwtid: randomUUID(),
       expiresIn: this.config.get<string>('JWT_REFRESH_EXPIRES_IN', '7d'),
     });
     const decoded = this.jwt.decode(refreshToken) as { exp?: number } | null;
