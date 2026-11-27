@@ -218,27 +218,25 @@ local de cobertura: las condiciones del gate se administran en SonarCloud.
 
 ### Activación en la cuenta
 
-1. Importe `Sebastian-villarraga/Parkly-Back` desde GitHub en SonarCloud y copie
-   **Organization key** y **Project key** de ese proyecto; no son necesariamente
-   iguales al nombre de usuario y repositorio.
-2. En SonarCloud, use análisis mediante GitHub Actions. Si el proyecto ya usa
-   análisis automático, desactívelo en **Administration > Analysis Method** para
-   evitar que se ejecute simultáneamente con el análisis de CI.
-3. En GitHub, repositorio Parkly-Back, **Settings > Secrets and variables > Actions**:
-   - En **Variables**, cree `SONAR_ORGANIZATION` con Organization key.
-   - En **Variables**, cree `SONAR_PROJECT_KEY` con Project key.
-   - En **Secrets**, cree `SONAR_TOKEN` con un token de SonarCloud autorizado
-     para analizar ese proyecto. No lo escriba en código, `.env` ni mensajes de chat.
-4. Publique el commit y abra/actualice un PR, o ejecute **Backend CI** manualmente
-   cuando el workflow ya esté disponible en GitHub. El análisis de ramas y PRs
-   depende de las capacidades y permisos de su proyecto en SonarCloud.
-5. Confirme **SonarCloud and Quality Gate** en Actions y el análisis en el panel
-   del proyecto. Un job omitido no equivale a un análisis aprobado.
+El proyecto importado usa Organization key `sebastian-villarraga` y Project key
+`Sebastian-villarraga_Parkly-Back`, versionados en `sonar-project.properties`.
+No se necesitan variables `SONAR_ORGANIZATION` ni `SONAR_PROJECT_KEY` en GitHub.
 
-Sin las dos variables, CI conserva pruebas/build y deja un aviso de configuración
-pendiente; el job SonarCloud aparece omitido. Con variables pero sin token, el job
-falla con un mensaje explícito. Los PRs desde forks ejecutan las pruebas, pero
-omiten el análisis con secreto; no se utiliza `pull_request_target`.
+1. En SonarCloud, use análisis mediante GitHub Actions. Si el proyecto ya usa
+   análisis automático, desactívelo en **Administration > Analysis Method** para
+   evitar análisis simultáneos.
+2. En GitHub, Parkly-Back, **Settings > Secrets and variables > Actions > Secrets**,
+   cree `SONAR_TOKEN` con un token autorizado para analizar ese proyecto. El autor
+   confirmó que este secreto ya existe. No lo escriba en código, `.env` ni chat.
+3. Publique el commit y abra/actualice un PR, o ejecute **Backend CI** manualmente
+   cuando el workflow esté disponible en GitHub. El análisis de ramas y PRs
+   depende de las capacidades y permisos del proyecto en SonarCloud.
+4. Confirme **SonarCloud and Quality Gate** en Actions y el análisis en el panel:
+   https://sonarcloud.io/dashboard?id=Sebastian-villarraga_Parkly-Back
+
+Sin token, el job falla con un mensaje explícito. Los PRs desde forks ejecutan
+las pruebas, pero omiten el análisis con secreto; no se utiliza `pull_request_target`.
+Un job omitido no equivale a un análisis aprobado.
 
 Para comprobar cobertura localmente, prepare la base demo descrita arriba y ejecute:
 
@@ -246,8 +244,7 @@ Para comprobar cobertura localmente, prepare la base demo descrita arriba y ejec
 corepack pnpm test:cov
 ```
 
-El archivo de configuración es `sonar-project.properties`; las claves se pasan
-mediante variables de Actions para no inventar una organización o proyecto.
+El archivo de configuración es `sonar-project.properties`; contiene las claves públicas confirmadas del proyecto.
 El directorio temporal `.scannerwork/` y los reportes `coverage/` se ignoran en Git.
 La configuración local no crea por sí sola el proyecto remoto ni el secreto,
 y no demuestra que haya ocurrido un análisis en SonarCloud.
